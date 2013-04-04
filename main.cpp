@@ -3,6 +3,7 @@
 #include <cassert>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 extern "C" {
 #include <pg_config.h>
@@ -43,6 +44,10 @@ inline unsigned integral_division(unsigned dividend, unsigned divisor) {
 	assert( dividend - (divisor*result) == 0 );
 	return result;
 }
+
+std::vector<char> bytes_from(const std::string& str) {
+	return std::vector<char>(str.begin(),str.end());
+};
 
 struct ToastPointer {
 	uint8 pointer_size;
@@ -103,23 +108,28 @@ struct Varlena : public varlena {
 		return 0;
 	}
 
-	std::string build_string() {
+	std::vector<char> build_bytes() {
 		unsigned size_str = size();
 
 		char* data = reinterpret_cast<char*>(this);
 		switch( len_type() ) {
-		case COMPRESSED: return "COMPRESSED";
-		case TOASTED: return get_toast_pointer()->build_string();
+		case COMPRESSED: return bytes_from("COMPRESSED");
+		case TOASTED: return bytes_from(get_toast_pointer()->build_string());
 		case NORMAL: data += 4; size_str -= 4; break;
 		case ONE_BYTE: data += 1; size_str -= 1; break;
 		}
 
-		std::string r;
+		std::vector<char> r;
 		for( unsigned int i=0;i<size_str;++i ) {
-			r += data[i];
+			r.push_back(data[i]);
 		}
 		return r;
-	};
+	}
+
+	std::string build_string() {
+		auto bytes = build_bytes();
+		return std::string(bytes.begin(),bytes.end());
+	}
 };
 
 struct ItemHeader;
@@ -315,6 +325,20 @@ void print_varlena(std::ostream& stream, const std::string& field, Varlena* varl
 	}
 	stream << std::endl;
 }
+void print_geometric(std::ostream& stream, const std::string& field, Varlena* varlena) {
+	if( varlena == NULL || varlena->len_type() == Varlena::TOASTED ) {
+		print_varlena(stream,field,varlena);
+		return;
+	}
+	stream << "\t\t" << field << " ";
+	std::vector<char> bytes = varlena->build_bytes();
+	for( unsigned int i=0;i<bytes.size();++i ) {
+		stream << hexadecimate( ((unsigned char)(bytes[i]))>>4 );
+		stream << hexadecimate( ((unsigned char)(bytes[i]))&0xF );
+	}
+	stream << std::endl;
+}
+
 void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata) {
 	unsigned pos=0;
 #if 0 //TOAST table code, TODO refactor
@@ -408,5 +432,7 @@ void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata) {
 	print_integer(std::cout,"number2",number2,itemheader.has_attribute(8));
 	print_varlena(std::cout,"text6",text6);
 	print_varlena(std::cout,"point",point);
+	print_varlena(std::cout,"ids_minhabase",ids_minhabase);
+	print_geometric(std::cout,"point",point);
 	assert( pos == itemdata.data_size );
 };
