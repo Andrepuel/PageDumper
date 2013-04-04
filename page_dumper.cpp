@@ -31,9 +31,7 @@ std::vector<char> bytes_from(const std::string& str) {
 	return std::vector<char>(str.begin(),str.end());
 };
 
-std::map<_ChunkId,_ChunkData>* Varlena::toast_positions=NULL;
-std::istream* Varlena::toast_file=NULL;
-
+ToastMap* Varlena::toastmap=NULL;
 
 PageData* read_page(std::istream& stream, unsigned pos, char* buffer) {
 	static char read_page_buffer[PAGE_SIZE];
@@ -42,6 +40,57 @@ PageData* read_page(std::istream& stream, unsigned pos, char* buffer) {
 	stream.seekg(pos*PAGE_SIZE,std::istream::beg);
 	stream.read(buffer,PAGE_SIZE);
 	return reinterpret_cast<PageData*>(buffer);
+}
+
+void ToastMap::fill_toast_map() {
+	static char page_buffer[PAGE_SIZE];
+
+	PageIterator it(file);
+
+	PageData* each;
+	unsigned int page_pos=0;
+	while( (each = it.next(page_buffer)) != NULL ) {
+		PageData& page = *each;
+
+		for( unsigned int i = 0; i < page.itemid_count(); ++i ) {
+			ItemIdData& itemid = page.pd_linp[i];
+
+			if( itemid.lp_flags != LP_NORMAL ) {
+			} else if( itemid.lp_len == 0 ) {
+			} else if( itemid.lp_off > PAGE_SIZE ) {
+			} else if( itemid.lp_off + itemid.lp_len > PAGE_SIZE ) {
+			} else {
+				ItemHeader& itemheader = *page.get_item_header(itemid);
+				ItemData itemdata = page.get_item_data(itemid);
+
+				unsigned pos=0;
+				assert( itemheader.has_attribute(0) );
+				assert( itemheader.has_attribute(1) );
+				assert( itemheader.has_attribute(2) );
+
+				unsigned chunk_id = itemdata.get_unsigned(pos);
+				pos += itemdata.get_unsigned_size(pos);
+
+				unsigned chunk_seq = itemdata.get_unsigned(pos);
+				pos += itemdata.get_unsigned_size(pos);
+
+				Varlena* chunk_data = itemdata.get_varlena(pos);
+				pos += itemdata.get_varlena_size(pos);
+
+				_ChunkData& data = positions[chunk_id];
+				if( data.size() <= chunk_seq ) {
+					data.resize( chunk_seq+1 );
+				}
+
+				//			PAGEOFFSET	     ITEMOFFSET      ITEMHEADEROFFSET	ID AND SEQ 	VARLENA OFFSET
+				data[chunk_seq].first = PAGE_SIZE*page_pos + itemid.lp_off + itemheader.t_hoff + 8		 + chunk_data->data_offset();
+				data[chunk_seq].second = chunk_data->size() - chunk_data->data_offset();
+			}
+		}
+	
+		page_pos++;
+	};
+
 }
 
 void print_integer(std::ostream& stream, const std::string& field, unsigned value, bool notNull) {
@@ -87,7 +136,7 @@ void print_geometric(std::ostream& stream, const std::string& field, Varlena* va
 	stream << std::endl;
 }
 
-PageIterator::PageIterator(std::ifstream* stream)
+PageIterator::PageIterator(std::istream* stream)
 : stream(stream), it(0)
 {
 	assert( stream->good() );

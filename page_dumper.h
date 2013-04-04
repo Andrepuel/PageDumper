@@ -20,10 +20,6 @@ extern "C" {
 #define PAGE_SIZE (8*1024)
 namespace page_dumper {
 
-typedef unsigned _ChunkId;
-typedef std::pair<size_t,size_t> _ChunkPos;
-typedef std::vector<_ChunkPos> _ChunkData;
-
 char hexadecimate(unsigned value);
 
 inline unsigned integral_division(unsigned dividend, unsigned divisor) {
@@ -33,6 +29,17 @@ inline unsigned integral_division(unsigned dividend, unsigned divisor) {
 }
 
 std::vector<char> bytes_from(const std::string& str);
+
+typedef unsigned _ChunkId;
+typedef std::pair<size_t,size_t> _ChunkPos;
+typedef std::vector<_ChunkPos> _ChunkData;
+
+struct ToastMap {
+	std::map<_ChunkId,_ChunkData> positions;
+	std::istream* file;
+
+	void fill_toast_map();
+};
 
 struct ToastPointer {
 	uint8 pointer_size;
@@ -66,11 +73,11 @@ struct ToastPointer {
 		return pointer_here.va_extsize < (pointer_here.va_rawsize-VARHDRSZ);
 	}
 
-	std::vector<char> fetch_data(std::map<_ChunkId,_ChunkData>& positions, std::istream& toast_file) {
+	std::vector<char> fetch_data( ToastMap& toast ) {
 		varatt_external pointer_here = pointer();
 
-		auto found = positions.find(pointer_here.va_valueid);
-		if( found == positions.end() ) {
+		auto found = toast.positions.find(pointer_here.va_valueid);
+		if( found == toast.positions.end() ) {
 			throw std::runtime_error("TOAST not found");
 		}
 		_ChunkData& datas = found->second;
@@ -86,8 +93,8 @@ struct ToastPointer {
 		unsigned pos = 4;
 		for( unsigned int i=0;i<datas.size();++i) {
 			assert( pos+datas[i].second <= size );
-			toast_file.seekg(datas[i].first,std::istream::beg);
-			toast_file.read( &(result[pos]), datas[i].second );
+			toast.file->seekg(datas[i].first,std::istream::beg);
+			toast.file->read( &(result[pos]), datas[i].second );
 			pos += datas[i].second;
 		}
 		assert( pos == size );
@@ -119,10 +126,9 @@ struct ToastPointer {
 		return decompressed;
 	}
 };
+
 struct Varlena : public varlena {
-	//Initially it is NULL, set to something else to be used
-	static std::map<_ChunkId,_ChunkData>* toast_positions;
-	static std::istream* toast_file;
+	static ToastMap* toastmap;
 
 	unsigned _size() {
 		return *reinterpret_cast<unsigned*>(vl_len_);
@@ -180,8 +186,8 @@ struct Varlena : public varlena {
 		switch( len_type() ) {
 		case COMPRESSED: return bytes_from("COMPRESSED"); //TODO
 		case TOASTED: 
-			if( toast_positions != NULL && toast_file != NULL ) {
-				return get_toast_pointer()->fetch_data(*toast_positions,*toast_file);
+			if( toastmap != NULL ) {
+				return get_toast_pointer()->fetch_data(*toastmap);
 			} else {
 				return bytes_from(get_toast_pointer()->build_string());
 			}
@@ -307,11 +313,11 @@ void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata, i
 
 class PageIterator {
 public:
-	PageIterator(std::ifstream* stream);
+	PageIterator(std::istream* stream);
 
 	PageData* next(char* buffer);
 private:
-	std::ifstream* stream;
+	std::istream* stream;
 	unsigned it;
 	unsigned end;
 };

@@ -7,10 +7,9 @@
 namespace {
 using namespace page_dumper;
 
-std::map< _ChunkId, _ChunkData > toast;
 std::ifstream toast_file;
+ToastMap toastmap = { std::map<_ChunkId,_ChunkData>() ,&toast_file};
 
-//TODO Put this code in the shared header
 void toast_table_init(int argc, char** argv) {
 	static bool inited=false;
 
@@ -18,61 +17,13 @@ void toast_table_init(int argc, char** argv) {
 		return;
 	inited=true;
 
-	static char page_buffer[PAGE_SIZE];
-
 	if( argc <= 2 ) {
 		std::cerr << "Usage " << argv[0] << " input_table table's_toast" << std::endl;
 		throw 1;
 	}
 
 	toast_file.open(argv[2]);
-	PageIterator it(&toast_file);
-
-
-	//TODO Move out of here
-	PageData* each;
-	unsigned int page_pos=0;
-	while( (each = it.next(page_buffer)) != NULL ) {
-		PageData& page = *each;
-
-		for( unsigned int i = 0; i < page.itemid_count(); ++i ) {
-			ItemIdData& itemid = page.pd_linp[i];
-
-			if( itemid.lp_flags != LP_NORMAL ) {
-			} else if( itemid.lp_len == 0 ) {
-			} else if( itemid.lp_off > PAGE_SIZE ) {
-			} else if( itemid.lp_off + itemid.lp_len > PAGE_SIZE ) {
-			} else {
-				ItemHeader& itemheader = *page.get_item_header(itemid);
-				ItemData itemdata = page.get_item_data(itemid);
-
-				unsigned pos=0;
-				assert( itemheader.has_attribute(0) );
-				assert( itemheader.has_attribute(1) );
-				assert( itemheader.has_attribute(2) );
-
-				unsigned chunk_id = itemdata.get_unsigned(pos);
-				pos += itemdata.get_unsigned_size(pos);
-
-				unsigned chunk_seq = itemdata.get_unsigned(pos);
-				pos += itemdata.get_unsigned_size(pos);
-
-				Varlena* chunk_data = itemdata.get_varlena(pos);
-				pos += itemdata.get_varlena_size(pos);
-
-				_ChunkData& data = toast[chunk_id];
-				if( data.size() <= chunk_seq ) {
-					data.resize( chunk_seq+1 );
-				}
-
-				//			PAGEOFFSET	     ITEMOFFSET      ITEMHEADEROFFSET	ID AND SEQ 	VARLENA OFFSET
-				data[chunk_seq].first = PAGE_SIZE*page_pos + itemid.lp_off + itemheader.t_hoff + 8		 + chunk_data->data_offset();
-				data[chunk_seq].second = chunk_data->size() - chunk_data->data_offset();
-			}
-		}
-	
-		page_pos++;
-	};
+	toastmap.fill_toast_map();
 }
 
 }
@@ -81,8 +32,7 @@ namespace page_dumper {
 
 void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata, int argc, char** argv) {
 	toast_table_init(argc,argv);
-	Varlena::toast_positions = &toast;
-	Varlena::toast_file = &toast_file;
+	Varlena::toastmap = &toastmap;
 
 	unsigned pos=0;
 
@@ -177,8 +127,7 @@ void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata, i
 		std::cerr << ". What( " << e.what() << ")" << std::endl;
 	};
 
-	Varlena::toast_positions = NULL;
-	Varlena::toast_file = NULL;
+	Varlena::toastmap = NULL;
 }
 
 };
