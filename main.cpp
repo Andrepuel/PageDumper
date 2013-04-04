@@ -2,8 +2,7 @@
 #include <string>
 #include <cassert>
 #include <iostream>
-
-#include <stdio.h>
+#include <sstream>
 
 extern "C" {
 #include <pg_config.h>
@@ -45,6 +44,24 @@ inline unsigned integral_division(unsigned dividend, unsigned divisor) {
 	return result;
 }
 
+struct ToastPointer {
+	uint8 pointer_size;
+	varatt_external pointer;
+
+	std::string build_string() {
+		std::stringstream r;
+		varatt_external pointer_here;
+		memcpy(&pointer_here,reinterpret_cast<char*>(this)+1,sizeof(varatt_external));
+
+		r << "TOAST_POINTER[" << int(pointer_size) << "] = {";
+		r << pointer_here.va_rawsize << ",";
+		r << pointer_here.va_extsize << ",";
+		r << pointer_here.va_valueid << ",";
+		r << pointer_here.va_toastrelid;
+		r << "}";
+		return r.str();
+	}
+};
 struct Varlena : public varlena {
 	unsigned _size() {
 		return *reinterpret_cast<unsigned*>(vl_len_);
@@ -70,6 +87,11 @@ struct Varlena : public varlena {
 		}
 	};
 
+	ToastPointer* get_toast_pointer() {
+		assert( len_type() == TOASTED );
+		return reinterpret_cast<ToastPointer*>( reinterpret_cast<char*>(this)+1 );
+	}
+
 	unsigned size() {
 		switch( len_type() ) {
 		case NORMAL: return _size()>>2;
@@ -77,6 +99,8 @@ struct Varlena : public varlena {
 		case TOASTED: return 18;
 		case ONE_BYTE: return (_size()&0xFF)>>1;
 		}
+		assert(false);
+		return 0;
 	}
 
 	std::string build_string() {
@@ -85,7 +109,7 @@ struct Varlena : public varlena {
 		char* data = reinterpret_cast<char*>(this);
 		switch( len_type() ) {
 		case COMPRESSED: return "COMPRESSED";
-		case TOASTED: return "TOASTED";
+		case TOASTED: return get_toast_pointer()->build_string();
 		case NORMAL: data += 4; size_str -= 4; break;
 		case ONE_BYTE: data += 1; size_str -= 1; break;
 		}
@@ -165,6 +189,8 @@ struct ItemHeader : public HeapTupleHeaderData {
 	}
 
 	bool has_attribute(unsigned pos) {
+		if( !has_bitmap() )
+			return true;
 		return !bool(att_isnull(pos,t_bits));
 	}
 };
@@ -291,7 +317,24 @@ void print_varlena(std::ostream& stream, const std::string& field, Varlena* varl
 }
 void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata) {
 	unsigned pos=0;
+#if 0 //TOAST table code, TODO refactor
+	assert( itemheader.has_attribute(0) );
+	assert( itemheader.has_attribute(1) );
+	assert( itemheader.has_attribute(2) );
 
+	unsigned chunk_id = itemdata.get_unsigned(pos);
+	pos += itemdata.get_unsigned_size(pos);
+
+	unsigned chunk_seq = itemdata.get_unsigned(pos);
+	pos += itemdata.get_unsigned_size(pos);
+
+	Varlena* chunk_data = itemdata.get_varlena(pos);
+	pos += itemdata.get_varlena_size(pos);
+
+	std::cout << "\t\t{" << chunk_id << "," << chunk_seq << ",[" << chunk_data->size() << "]}" << std::endl;
+
+	return;
+#endif
 	assert( itemheader.has_attribute(0) );
 	unsigned id = itemdata.get_unsigned(pos);
 	pos += itemdata.get_unsigned_size(pos);
