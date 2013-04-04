@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
 	std::ifstream input(argv[1]);
 	assert( input.good() );
 
+	//TODO Use PageIterator
 	input.seekg(0, std::ifstream::end);
 	unsigned size = input.tellg();
 	input.seekg(0, std::ifstream::beg);
@@ -31,25 +32,31 @@ int main(int argc, char** argv) {
 		return 1;
 	};
 
-	for( unsigned int which_page=0;which_page<pages;++which_page) {
-		PageData& page = *read_page(input,which_page);
-		std::cerr << "Page " << which_page << "(" << page.itemid_count() << " itens)" << std::endl;
-		for( unsigned int i = 0; i < page.itemid_count(); ++i ) {
-			ItemIdData& itemid = page.pd_linp[i];
-			if( itemid.lp_flags != LP_NORMAL ) {
-				std::cerr << "\tIgnoring item because it is not marked as LP_NORMAL" << std::endl;
-			} else if( itemid.lp_len == 0 ) {
-				std::cerr << "\tIgnoring item because it has no storage" << std::endl;
-			} else if( itemid.lp_off > PAGE_SIZE ) {
-				std::cerr << "\tIgnoring item because it's offset is outside of page" << std::endl;
-			} else if( itemid.lp_off + itemid.lp_len > PAGE_SIZE ) {
-				std::cerr << "\tIgnoring item because it spans outsize of the page" << std::endl;
-			} else {
-				ItemHeader& itemheader = *page.get_item_header(itemid);
-				ItemData itemdata = page.get_item_data(itemid);
-				user_code(itemid,itemheader,itemdata, argc, argv);
-			}
-		};
+	try {
+		for( unsigned int which_page=0;which_page<pages;++which_page) {
+			PageData& page = *read_page(input,which_page);
+			std::cerr << "Page " << which_page << "(" << page.itemid_count() << " itens)" << std::endl;
+			for( unsigned int i = 0; i < page.itemid_count(); ++i ) {
+				ItemIdData& itemid = page.pd_linp[i];
+				if( itemid.lp_flags != LP_NORMAL ) {
+					std::cerr << "\tIgnoring item because it is not marked as LP_NORMAL" << std::endl;
+				} else if( itemid.lp_len == 0 ) {
+					std::cerr << "\tIgnoring item because it has no storage" << std::endl;
+				} else if( itemid.lp_off > PAGE_SIZE ) {
+					std::cerr << "\tIgnoring item because it's offset is outside of page" << std::endl;
+				} else if( itemid.lp_off + itemid.lp_len > PAGE_SIZE ) {
+					std::cerr << "\tIgnoring item because it spans outsize of the page" << std::endl;
+				} else {
+					ItemHeader& itemheader = *page.get_item_header(itemid);
+					ItemData itemdata = page.get_item_data(itemid);
+					user_code(itemid,itemheader,itemdata, argc, argv);
+
+
+				}
+			};
+		}
+	} catch(int retcode) {
+		return retcode;
 	}
 
 	return 0;

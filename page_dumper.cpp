@@ -1,4 +1,6 @@
 #include "page_dumper.h"
+#include <stdexcept>
+#include <fstream>
 
 namespace page_dumper {
 
@@ -29,13 +31,17 @@ std::vector<char> bytes_from(const std::string& str) {
 	return std::vector<char>(str.begin(),str.end());
 };
 
+std::map<_ChunkId,_ChunkData>* Varlena::toast_positions=NULL;
+std::istream* Varlena::toast_file=NULL;
+
+
 PageData* read_page(std::istream& stream, unsigned pos, char* buffer) {
 	static char read_page_buffer[PAGE_SIZE];
 	if( buffer == NULL ) buffer = read_page_buffer;
 
 	stream.seekg(pos*PAGE_SIZE,std::istream::beg);
-	stream.read(read_page_buffer,PAGE_SIZE);
-	return reinterpret_cast<PageData*>(&read_page_buffer);
+	stream.read(buffer,PAGE_SIZE);
+	return reinterpret_cast<PageData*>(buffer);
 }
 
 void print_integer(std::ostream& stream, const std::string& field, unsigned value, bool notNull) {
@@ -68,7 +74,7 @@ void print_varlena(std::ostream& stream, const std::string& field, Varlena* varl
 	stream << std::endl;
 }
 void print_geometric(std::ostream& stream, const std::string& field, Varlena* varlena) {
-	if( varlena == NULL || varlena->len_type() == Varlena::TOASTED ) {
+	if( varlena == NULL ) {
 		print_varlena(stream,field,varlena);
 		return;
 	}
@@ -80,5 +86,31 @@ void print_geometric(std::ostream& stream, const std::string& field, Varlena* va
 	}
 	stream << std::endl;
 }
+
+PageIterator::PageIterator(std::ifstream* stream)
+: stream(stream), it(0)
+{
+	assert( stream->good() );
+
+	stream->seekg(0, std::ifstream::end);
+	unsigned size = stream->tellg();
+	stream->seekg(0, std::ifstream::beg);
+	end = size/PAGE_SIZE;
+
+	std::stringstream err;
+	if( size - (end*PAGE_SIZE) != 0 ) {
+		err << "Given file is not aligned to " << PAGE_SIZE << " bytes" << std::endl;
+		throw std::logic_error(err.str());
+	}
+}
+
+PageData* PageIterator::next(char* buffer) {
+	if( it >= end )
+		return NULL;
+
+	return read_page(*stream,it++,buffer);
+}
+
+
 
 };

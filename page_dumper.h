@@ -5,6 +5,8 @@
 #include <sstream>
 #include <vector>
 #include <cassert>
+#include <map>
+#include <stdexcept>
 
 extern "C" {
 #include <pg_config.h>
@@ -12,10 +14,15 @@ extern "C" {
 #include <storage/bufpage.h>
 #include <storage/itemid.h>
 #include <access/htup.h>
+#include <utils/pg_lzcompress.h>
 }
 
 #define PAGE_SIZE (8*1024)
 namespace page_dumper {
+
+typedef unsigned _ChunkId;
+typedef std::pair<size_t,size_t> _ChunkPos;
+typedef std::vector<_ChunkPos> _ChunkData;
 
 char hexadecimate(unsigned value);
 
@@ -29,12 +36,17 @@ std::vector<char> bytes_from(const std::string& str);
 
 struct ToastPointer {
 	uint8 pointer_size;
-	varatt_external pointer;
+
+	varatt_external pointer() {
+		varatt_external pointer_here;
+		memcpy(&pointer_here,reinterpret_cast<char*>(this)+1,sizeof(varatt_external));
+		return pointer_here;		
+	}
 
 	std::string build_string() {
 		std::stringstream r;
-		varatt_external pointer_here;
-		memcpy(&pointer_here,reinterpret_cast<char*>(this)+1,sizeof(varatt_external));
+
+		varatt_external pointer_here = pointer();
 
 		r << "TOAST_POINTER[" << int(pointer_size) << "] = {";
 		r << pointer_here.va_rawsize << ",";
@@ -44,8 +56,74 @@ struct ToastPointer {
 		r << "}";
 		return r.str();
 	}
+
+	bool is_compressed() {
+		/* From postgres.h:
+		 * "The data is compressed if and only if va_extsize < va_rawsize - VARHDRSZ"
+		 */
+
+		varatt_external pointer_here = pointer();
+		return pointer_here.va_extsize < (pointer_here.va_rawsize-VARHDRSZ);
+	}
+
+	std::vector<char> fetch_data(std::map<_ChunkId,_ChunkData>& positions, std::istream& toast_file) {
+		varatt_external pointer_here = pointer();
+
+		auto found = positions.find(pointer_here.va_valueid);
+		if( found == positions.end() ) {
+			throw std::runtime_error("TOAST not found");
+		}
+		_ChunkData& datas = found->second;
+
+		//Varlen must carry the compressed size
+		unsigned size=4;
+		for( unsigned int i=0;i<datas.size();++i) {
+			size += datas[i].second;
+		}
+
+		std::vector<char> result(size);
+
+		unsigned pos = 4;
+		for( unsigned int i=0;i<datas.size();++i) {
+			assert( pos+datas[i].second <= size );
+			toast_file.seekg(datas[i].first,std::istream::beg);
+			toast_file.read( &(result[pos]), datas[i].second );
+			pos += datas[i].second;
+		}
+		assert( pos == size );
+
+		if( !is_compressed() ) {
+			//Toss varlen alway
+			for( unsigned int i=0;i<result.size()-4;++i) {
+				result[i+0] = result[i+0+4];
+				result[i+1] = result[i+1+4];
+				result[i+2] = result[i+2+4];
+				result[i+3] = result[i+3+4];
+			}
+			result.resize(result.size()-4);
+			return result;
+		}
+
+		PGLZ_Header& pglz_header = *reinterpret_cast<PGLZ_Header*>( &result[0] );
+		pglz_header.vl_len_ = pointer_here.va_rawsize<<2;
+
+		//WORKAROUND Extra kbyte to guarantee that a buggy decompresser does not write garbage where it shouldnt
+		std::vector<char> decompressed(pglz_header.rawsize + 1024);
+		pglz_decompress(&pglz_header, &(decompressed[0]) );
+		decompressed.resize(pglz_header.rawsize);
+
+		if( decompressed[0] == 'c' && decompressed[1] == 'c' ) {
+			throw std::runtime_error("Corrupted compressed data");
+		}
+
+		return decompressed;
+	}
 };
 struct Varlena : public varlena {
+	//Initially it is NULL, set to something else to be used
+	static std::map<_ChunkId,_ChunkData>* toast_positions;
+	static std::istream* toast_file;
+
 	unsigned _size() {
 		return *reinterpret_cast<unsigned*>(vl_len_);
 	}
@@ -86,13 +164,27 @@ struct Varlena : public varlena {
 		return 0;
 	}
 
+	unsigned data_offset() {
+		switch( len_type() ) {
+		case NORMAL: return 4;
+		case ONE_BYTE: return 1;	
+		default: return 0;
+		}
+		return 0;
+	}
+
 	std::vector<char> build_bytes() {
 		unsigned size_str = size();
 
 		char* data = reinterpret_cast<char*>(this);
 		switch( len_type() ) {
-		case COMPRESSED: return bytes_from("COMPRESSED");
-		case TOASTED: return bytes_from(get_toast_pointer()->build_string());
+		case COMPRESSED: return bytes_from("COMPRESSED"); //TODO
+		case TOASTED: 
+			if( toast_positions != NULL && toast_file != NULL ) {
+				return get_toast_pointer()->fetch_data(*toast_positions,*toast_file);
+			} else {
+				return bytes_from(get_toast_pointer()->build_string());
+			}
 		case NORMAL: data += 4; size_str -= 4; break;
 		case ONE_BYTE: data += 1; size_str -= 1; break;
 		}
@@ -123,17 +215,19 @@ struct ItemData {
 			end = max;
 
 		for( unsigned int i = pos; i < end; ++i ) {
+
+#if 0 //PRINT ASCII
 			if( data[i] >= '!' && data[i] <= '~') {
 				result += data[i];
 			} else if( data[i] == '\n' ) {
 				result += "\\n";
 			} else if( data[i] == ' ') {
 				result += " ";
-			} else {
-//				result += std::to_string( data[i] );
+			} else 
+#endif
+			{
 				result += hexadecimate( ((unsigned char)(data[i]))>>4 );
 				result += hexadecimate( data[i]&0xF );
-//				result += "X";
 			}
 			result += " ";
 		}
@@ -210,6 +304,17 @@ void print_varlena(std::ostream& stream, const std::string& field, Varlena* varl
 void print_geometric(std::ostream& stream, const std::string& field, Varlena* varlena);
 
 void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata, int argc, char** argv);
+
+class PageIterator {
+public:
+	PageIterator(std::ifstream* stream);
+
+	PageData* next(char* buffer);
+private:
+	std::ifstream* stream;
+	unsigned it;
+	unsigned end;
+};
 
 }
 

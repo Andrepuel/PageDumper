@@ -22,10 +22,11 @@ void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata, i
 	pos += itemdata.get_unsigned_size(pos);
 
 	Varlena* chunk_data = itemdata.get_varlena(pos);
+	std::string chunk_hex = itemdata.hexadecimate_all(pos,pos+30);
 	pos += itemdata.get_varlena_size(pos);
 
 	if( filter == 0 || chunk_id == filter ) {
-		std::cout << "\t\t{" << chunk_id << "," << chunk_seq << ",[" << chunk_data->size() << "]}" << std::endl;
+		std::cout << "\t\t{" << chunk_id << "," << chunk_seq << ",[" << chunk_data->size() << "]\t{" << chunk_hex << "}}" << std::endl;
 	}
 
 	return;
