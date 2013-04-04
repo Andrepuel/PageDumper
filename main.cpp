@@ -115,14 +115,9 @@ struct ItemHeader : public HeapTupleHeaderData {
 	}
 };
 
-struct PageData {
-	union {
-		PageHeaderData header;
-		ItemIdData itens[1];
-	};
-
+struct PageData : public PageHeaderData {
 	unsigned itemid_count() {
-		return integral_division( header.pd_lower-sizeof(PageHeaderData)+sizeof(ItemIdData), sizeof(ItemIdData) );
+		return integral_division( pd_lower-sizeof(PageHeaderData)+sizeof(ItemIdData), sizeof(ItemIdData) );
 	};
 
 	ItemHeader* get_item_header(const ItemIdData& itemid) {
@@ -178,17 +173,17 @@ int main(int argc, char** argv) {
 
 	for( unsigned int which_page=0;which_page<pages;++which_page) {
 		PageData& page = *read_page(input,which_page);
-//		std::cout << "Page " << which_page << std::endl;
+		std::cout << "Page " << which_page << "(" << page.itemid_count() << " itens)" << std::endl;
 		for( unsigned int i = 0; i < page.itemid_count(); ++i ) {
-			ItemIdData& itemid = page.itens[i];
+			ItemIdData& itemid = page.pd_linp[i];
 			if( itemid.lp_flags != LP_NORMAL ) {
-//				std::cerr << "\tIgnoring item because it is not marked as LP_NORMAL" << std::endl;
+				std::cerr << "\tIgnoring item because it is not marked as LP_NORMAL" << std::endl;
 			} else if( itemid.lp_len == 0 ) {
-//				std::cerr << "\tIgnoring item because it has no storage" << std::endl;
+				std::cerr << "\tIgnoring item because it has no storage" << std::endl;
 			} else if( itemid.lp_off > PAGE_SIZE ) {
-//				std::cerr << "\tIgnoring item because it's offset is outside of page" << std::endl;
+				std::cerr << "\tIgnoring item because it's offset is outside of page" << std::endl;
 			} else if( itemid.lp_off + itemid.lp_len > PAGE_SIZE ) {
-//				std::cerr << "\tIgnoring item because it spans outsize of the page" << std::endl;
+				std::cerr << "\tIgnoring item because it spans outsize of the page" << std::endl;
 			} else {
 				ItemHeader& itemheader = *page.get_item_header(itemid);
 				std::cout << "\tItem (" << itemid.lp_off << "," << itemid.lp_len << ")~" << itemid.lp_flags;
