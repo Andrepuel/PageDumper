@@ -49,10 +49,53 @@ struct Varlena : public varlena {
 	unsigned _size() {
 		return *reinterpret_cast<unsigned*>(vl_len_);
 	}
+	
+	enum LenType {
+		NORMAL,COMPRESSED,TOASTED,ONE_BYTE
+	};
+
+	LenType len_type() {
+		if( vl_len_[0] & 0x1 ) {
+			if( vl_len_[0] == 1 ) {
+				return TOASTED;
+			} else {
+				return ONE_BYTE;
+			}
+		} else {
+			if( (vl_len_[0] & 0x2) == 0 ) {
+				return NORMAL;
+			} else {
+				return COMPRESSED;
+			}
+		}
+	};
+
 	unsigned size() {
-		assert(false);//WIP
-		return _size();
+		switch( len_type() ) {
+		case NORMAL: return _size()>>2;
+		case COMPRESSED: return _size()>>2;
+		case TOASTED: return 18;
+		case ONE_BYTE: return (_size()&0xFF)>>1;
+		}
 	}
+
+	std::string build_string() {
+		unsigned size_str = size();
+
+		char* data = reinterpret_cast<char*>(this);
+		switch( len_type() ) {
+		case COMPRESSED: return "COMPRESSED";
+		case TOASTED: return "TOASTED";
+		case NORMAL: data += 4; size_str -= 4; break;
+		case ONE_BYTE: data += 1; size_str -= 1; break;
+		}
+
+		std::string r;
+		for( unsigned int i=0;i<size_str;++i ) {
+			r += data[i];
+		}
+		return r;
+	};
 };
 
 struct ItemHeader;
@@ -68,7 +111,7 @@ struct ItemData {
 			end = max;
 
 		for( unsigned int i = pos; i < end; ++i ) {
-			if( isalnum(data[i]) ) {
+			if( data[i] >= '!' && data[i] <= '~') {
 				result += data[i];
 			} else if( data[i] == '\n' ) {
 				result += "\\n";
@@ -76,20 +119,32 @@ struct ItemData {
 				result += " ";
 			} else {
 //				result += std::to_string( data[i] );
-//				result += hexadecimate( ((unsigned char)(data[i]))>>4 );
-//				result += hexadecimate( data[i]&0xF );
-				result += "X";
+				result += hexadecimate( ((unsigned char)(data[i]))>>4 );
+				result += hexadecimate( data[i]&0xF );
+//				result += "X";
 			}
-//			result += " ";
+			result += " ";
 		}
 		return result;
 	}
 	
-	unsigned get_serial(unsigned pos) {
-		return *reinterpret_cast<unsigned*>( data+pos );
+	//TODO Assuming numbers are word aligned, check this
+	unsigned word_padding(unsigned pos) {
+		return (4-(pos%4))%4;
+	}
+	
+	unsigned get_unsigned(unsigned pos) {
+		return *reinterpret_cast<unsigned*>( data+pos+word_padding(pos) );
 	};
-	unsigned get_serial_size() {
-		return 4;
+	unsigned get_unsigned_size(unsigned pos) {
+		return 4+word_padding(pos);
+	}
+
+	int get_integer(unsigned pos) {
+		return *reinterpret_cast<int*>( data+pos+word_padding(pos) );
+	};
+	int get_integer_size(unsigned pos) {
+		return 4+word_padding(pos);
 	}
 
 	Varlena* get_varlena(unsigned pos) {
@@ -98,7 +153,6 @@ struct ItemData {
 	unsigned get_varlena_size(unsigned pos) {
 		return get_varlena(pos)->size();
 	}
-
 };
 
 struct ItemHeader : public HeapTupleHeaderData {
