@@ -260,8 +260,110 @@ int main(int argc, char** argv) {
 	return 0;
 };
 
-void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata) {
-	std::cout << itemdata.hexadecimate_all() << std::endl;
+void print_integer(std::ostream& stream, const std::string& field, unsigned value, bool notNull) {
+	stream << "\t\t" << field << " "; 
+	if( notNull ) {
+		stream << value;
+	} else {
+		stream << "NULL";
+	}
+	stream << std::endl;
 
-	return;
+}
+void print_integer(std::ostream& stream, const std::string& field, int value, bool notNull) {
+	stream << "\t\t" << field << " "; 
+	if( notNull ) {
+		stream << value;
+	} else {
+		stream << "NULL";
+	}
+	stream << std::endl;
+
+}
+void print_varlena(std::ostream& stream, const std::string& field, Varlena* varlena) {
+	stream << "\t\t" << field << " ";
+	if( varlena == NULL ) {
+		stream << "NULL";
+	} else {
+		stream << "(" << varlena->size() << ") \"" << varlena->build_string() << "\"";
+	}
+	stream << std::endl;
+}
+void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata) {
+	unsigned pos=0;
+
+	assert( itemheader.has_attribute(0) );
+	unsigned id = itemdata.get_unsigned(pos);
+	pos += itemdata.get_unsigned_size(pos);
+
+	assert( itemheader.has_attribute(1) );
+	Varlena* name = itemdata.get_varlena(pos);
+	pos += itemdata.get_varlena_size(pos);
+
+	Varlena* text1 = NULL;
+	if( itemheader.has_attribute(2) ) {
+		text1 = itemdata.get_varlena(pos);
+		pos += itemdata.get_varlena_size(pos);
+	}
+
+	Varlena* text2 = NULL;
+	if( itemheader.has_attribute(3) ) {
+		text2 = itemdata.get_varlena(pos);
+		pos += itemdata.get_varlena_size(pos);
+	}
+
+	Varlena* text3 = NULL;
+	if( itemheader.has_attribute(4) ) {
+		text3 = itemdata.get_varlena(pos);
+		pos += itemdata.get_varlena_size(pos);
+	}
+
+	int number1;
+	if( itemheader.has_attribute(5) ) {
+		number1 = itemdata.get_integer(pos);
+		pos += itemdata.get_integer_size(pos);
+	}
+
+	Varlena* text4 = NULL;
+	if( itemheader.has_attribute(6) ) {
+		text4 = itemdata.get_varlena(pos);
+		pos += itemdata.get_varlena_size(pos);
+	}
+
+	Varlena* text5 = NULL;
+	if( itemheader.has_attribute(7) ) {
+		text5 = itemdata.get_varlena(pos);
+		pos += itemdata.get_varlena_size(pos);
+	}
+
+	int number2;
+	if( itemheader.has_attribute(8) ) {
+		number2 = itemdata.get_integer(pos);
+		pos += itemdata.get_integer_size(pos);
+	}
+
+	Varlena* text6 = NULL;
+	if( itemheader.has_attribute(9) ) {
+		text6 = itemdata.get_varlena(pos);
+		pos += itemdata.get_varlena_size(pos);
+	}
+
+	Varlena* point = NULL;
+	if( itemheader.has_attribute(10) ) {
+		point = itemdata.get_varlena(pos);
+		pos += itemdata.get_varlena_size(pos);
+	}
+
+	print_integer(std::cout,"id",id,true);
+	print_varlena(std::cout,"name",name);
+	print_varlena(std::cout,"text1",text1);
+	print_varlena(std::cout,"text2",text2);
+	print_varlena(std::cout,"text3",text3);
+	print_integer(std::cout,"number1",number1,itemheader.has_attribute(5));
+	print_varlena(std::cout,"text4",text4);
+	print_varlena(std::cout,"text5",text5);
+	print_integer(std::cout,"number2",number2,itemheader.has_attribute(8));
+	print_varlena(std::cout,"text6",text6);
+	print_varlena(std::cout,"point",point);
+	assert( pos == itemdata.data_size );
 };
