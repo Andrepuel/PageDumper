@@ -309,7 +309,9 @@ void print_integer(std::ostream& stream, const std::string& field, int value, bo
 void print_varlena(std::ostream& stream, const std::string& field, Varlena* varlena);
 void print_geometric(std::ostream& stream, const std::string& field, Varlena* varlena);
 
-void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata, int argc, char** argv);
+void user_code_setup(int argc, char** argv);
+void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata);
+void user_code_finish();
 
 class PageIterator {
 public:

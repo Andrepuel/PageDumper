@@ -32,6 +32,8 @@ int main(int argc, char** argv) {
 		return 1;
 	};
 
+	user_code_setup(argc,argv);
+
 	try {
 		for( unsigned int which_page=0;which_page<pages;++which_page) {
 			PageData& page = *read_page(input,which_page);
@@ -49,15 +51,18 @@ int main(int argc, char** argv) {
 				} else {
 					ItemHeader& itemheader = *page.get_item_header(itemid);
 					ItemData itemdata = page.get_item_data(itemid);
-					user_code(itemid,itemheader,itemdata, argc, argv);
+					user_code(itemid,itemheader,itemdata);
 
 
 				}
 			};
 		}
 	} catch(int retcode) {
+		user_code_finish();
 		return retcode;
 	}
+
+	user_code_finish();
 
 	return 0;
 };

@@ -1,15 +1,23 @@
 #include "page_dumper.h"
 #include <sstream>
 
+namespace {
+unsigned filter = 0;
+}
+
 namespace page_dumper {
 
-void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata, int argc, char** argv) {
-	unsigned filter = 0;
+void user_code_finish() {
+}
+
+void user_code_setup(int argc, char** argv) {
 	if( argc > 2 ) {
 		std::stringstream read_number(argv[2]);
 		read_number >> filter;
 	}
+}
 
+void user_code(ItemIdData& itemid, ItemHeader& itemheader, ItemData& itemdata) {
 	unsigned pos=0;
 	assert( itemheader.has_attribute(0) );
 	assert( itemheader.has_attribute(1) );
