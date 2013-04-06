@@ -1,0 +1,1 @@
+PostGIS support is not available at the master branch because it uses GPL, which is not compatible with PageDumper license.

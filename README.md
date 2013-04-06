@@ -23,3 +23,5 @@ I had successfully used this code to retrieve data from a corrupted database.
 PostgreSQL version supported
 ----------------------------
 The project was coded and tested using PostgreSQL version 8.4. Supporting others versions is a future work.
+
+PostGIS support was done using the 1.3.6 version.

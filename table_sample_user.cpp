@@ -4,7 +4,7 @@
 #include <vector>
 #include <stdexcept>
 
-#ifdef WITH_POSGIS
+#ifdef WITH_POSTGIS
 #include "postgis_support.h"
 #endif
 

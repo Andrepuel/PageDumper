@@ -1,14 +1,15 @@
-CFLAGS=-g -Ipgsql_src/include/server -Wall
+POSTGIS_FLAGS=-DWITH_POSTGIS -Ipostgis_src/lwgeom
+CFLAGS=-g -Ipgsql_src/include/server -Wall ${POSTGIS_FLAGS} 
 CXXFLAGS=-std=c++0x ${CFLAGS}
 CXX=g++
 CC=gcc
 
 all: table_sample toast_dumper
 
-table_sample: main.o table_sample_user.o page_dumper.o pg_lzcompress.o
+table_sample: main.o table_sample_user.o page_dumper.o pg_lzcompress.o wktunparse.o postgis_support.o
 	${CXX} ${CXXFLAGS} $^ -o $@
 
-toast_dumper: main.o toast_dumper_user.o page_dumper.o pg_lzcompress.o
+toast_dumper: main.o toast_dumper_user.o page_dumper.o pg_lzcompress.o wktunparse.o postgis_support.o
 	${CXX} ${CXXFLAGS} $^ -o $@
 
 page_dumper.o: page_dumper.h page_dumper.cpp
@@ -18,6 +19,9 @@ table_sample_user.o: table_sample_user.cpp page_dumper.h
 toast_dumper_user.o: toast_dumper_user.cpp page_dumper.h
 
 pg_lzcompress.o: pgsql_src/pg_lzcompress.c
+	${CC} ${CFLAGS} -c $^ -o $@
+
+wktunparse.o: postgis_src/lwgeom/wktunparse.c
 	${CC} ${CFLAGS} -c $^ -o $@
 
 clean:
