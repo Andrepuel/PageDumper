@@ -32,9 +32,8 @@ int main(int argc, char** argv) {
 		return 1;
 	};
 
-	user_code_setup(argc,argv);
-
 	try {
+		user_code_setup(argc,argv);
 		for( unsigned int which_page=0;which_page<pages;++which_page) {
 			PageData& page = *read_page(input,which_page);
 			std::cerr << "Page " << which_page << "(" << page.itemid_count() << " itens)" << std::endl;
@@ -57,12 +56,11 @@ int main(int argc, char** argv) {
 				}
 			};
 		}
-	} catch(int retcode) {
 		user_code_finish();
+	} catch(int retcode) {
 		return retcode;
 	}
 
-	user_code_finish();
 
 	return 0;
 };
